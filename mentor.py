@@ -5,34 +5,34 @@ from langchain.memory import ConversationBufferWindowMemory
 from prompts import rag_prompt, chat_prompt
 from rag import get_relevant_context, has_document
 
-MODEL_PATH = "/kaggle/working/phi2_model"
+HF_TOKEN = os.environ.get("HF_TOKEN", "")
+MODEL_NAME = "microsoft/phi-2"
+
 _llm = None
 _memory = None
 _is_loaded = False
 
 def load_model():
     global _llm, _memory, _is_loaded
-    print("⏳ Loading Phi-2...")
-    tok = AutoTokenizer.from_pretrained(MODEL_PATH, trust_remote_code=True)
+    print("⏳ Loading Phi-2 on CPU...")
+    tok = AutoTokenizer.from_pretrained(
+        MODEL_NAME, token=HF_TOKEN, trust_remote_code=True
+    )
     tok.pad_token = tok.eos_token
     mdl = AutoModelForCausalLM.from_pretrained(
-        MODEL_PATH,
-        torch_dtype=torch.float16,
-        device_map="auto",
-        trust_remote_code=True
+        MODEL_NAME,
+        token=HF_TOKEN,
+        torch_dtype=torch.float32,
+        device_map="cpu",
+        trust_remote_code=True,
+        low_cpu_mem_usage=True
     )
     mdl.eval()
-    print(f"✅ Phi-2 loaded! GPU: {torch.cuda.memory_allocated()/1e9:.2f} GB")
-
+    print("✅ Phi-2 loaded on CPU!")
     pipe = pipeline(
-        "text-generation",
-        model=mdl,
-        tokenizer=tok,
-        max_new_tokens=120,   # short → always complete!
-        temperature=0.3,      # low → focused answers
-        top_p=0.85,
-        repetition_penalty=1.3,
-        do_sample=True,
+        "text-generation", model=mdl, tokenizer=tok,
+        max_new_tokens=120, temperature=0.3, top_p=0.85,
+        repetition_penalty=1.3, do_sample=True,
         return_full_text=False
     )
     _llm = HuggingFacePipeline(pipeline=pipe)
@@ -43,17 +43,12 @@ def load_model():
     print("✅ Ready!")
 
 def clean_response(r):
-    stop_phrases = [
-        "User:", "Human:", "\nUser", "\nHuman",
-        "[INST]", "[/INST]", "[INSERT", "Alex (",
-        "Assistant:", "<|", "|>", "Generated Output:",
-        "Question:", "Note:", "Disclaimer:"
-    ]
-    for stop in stop_phrases:
+    for stop in ["User:","Human:","\nUser","\nHuman","[INST]","[/INST]",
+                 "[INSERT","Alex (","Assistant:","<|","|>",
+                 "Generated Output:","Question:","Note:"]:
         if stop in r:
             r = r.split(stop)[0]
     r = r.strip()
-    # Ensure response ends at a complete sentence
     if r and r[-1] not in ".!?":
         last_punct = max(r.rfind("."), r.rfind("!"), r.rfind("?"))
         if last_punct > 20:
@@ -64,12 +59,10 @@ def get_response(user_input):
     global _llm, _memory, _is_loaded
     if not _is_loaded:
         load_model()
-    history = _memory.load_memory_variables({}).get("history", "")
+    history = _memory.load_memory_variables({}).get("history","")
     if has_document():
         context = get_relevant_context(user_input, k=3)
-        prompt = rag_prompt.format(
-            context=context, history=history, input=user_input
-        )
+        prompt = rag_prompt.format(context=context, history=history, input=user_input)
     else:
         prompt = chat_prompt.format(history=history, input=user_input)
     response = clean_response(_llm(prompt))
