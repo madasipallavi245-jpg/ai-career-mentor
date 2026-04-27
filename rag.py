@@ -1,31 +1,54 @@
-import os, fitz, docx, torch, numpy as np
+import os
+import fitz
+import docx
+import numpy as np
 from io import BytesIO
 from typing import List
-from transformers import AutoTokenizer, AutoModel
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain.embeddings.base import Embeddings
+import requests
 
-class PureTransformerEmbeddings(Embeddings):
+HF_TOKEN = os.environ.get("HF_TOKEN", "")
+EMB_API_URL = "https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/all-MiniLM-L6-v2"
+
+# Use HF API for embeddings too — no torch needed!
+class HFAPIEmbeddings(Embeddings):
     def __init__(self):
-        print("⏳ Loading embedding model...")
-        self.tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
-        self.model = AutoModel.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
-        self.model.eval()
-        print("✅ Embedding model loaded!")
-    def _embed(self, texts):
-        enc = self.tokenizer(texts, padding=True, truncation=True, max_length=512, return_tensors="pt")
-        with torch.no_grad():
-            out = self.model(**enc)
-        emb = out.last_hidden_state.mean(dim=1)
-        return torch.nn.functional.normalize(emb, p=2, dim=1).numpy()
-    def embed_documents(self, texts):
-        all_e = []
-        for i in range(0, len(texts), 32):
-            all_e.extend(self._embed(texts[i:i+32]).tolist())
-        return all_e
-    def embed_query(self, text):
-        return self._embed([text])[0].tolist()
+        self.headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+        print("✅ HF API Embeddings ready!")
+
+    def _get_embeddings(self, texts: List[str]) -> List[List[float]]:
+        response = requests.post(
+            EMB_API_URL,
+            headers=self.headers,
+            json={"inputs": texts, "options": {"wait_for_model": True}},
+            timeout=30
+        )
+        if response.status_code == 200:
+            result = response.json()
+            # Normalize embeddings
+            embeddings = []
+            for emb in result:
+                arr = np.array(emb)
+                norm = np.linalg.norm(arr)
+                if norm > 0:
+                    arr = arr / norm
+                embeddings.append(arr.tolist())
+            return embeddings
+        else:
+            raise Exception(f"Embedding API error: {response.status_code}")
+
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        # Process in batches of 10
+        all_embeddings = []
+        for i in range(0, len(texts), 10):
+            batch = texts[i:i+10]
+            all_embeddings.extend(self._get_embeddings(batch))
+        return all_embeddings
+
+    def embed_query(self, text: str) -> List[float]:
+        return self._get_embeddings([text])[0]
 
 _vector_store = None
 _embeddings = None
@@ -33,11 +56,12 @@ _embeddings = None
 def load_embeddings():
     global _embeddings
     if _embeddings is None:
-        _embeddings = PureTransformerEmbeddings()
+        _embeddings = HFAPIEmbeddings()
     return _embeddings
 
-def extract_text_from_file(uploaded_file):
+def extract_text_from_file(uploaded_file) -> str:
     ext = uploaded_file.name.split(".")[-1].lower()
+    print(f"📄 Reading: {uploaded_file.name}")
     if ext == "pdf":
         pdf = fitz.open(stream=uploaded_file.read(), filetype="pdf")
         text = "".join([pdf.load_page(i).get_text() for i in range(len(pdf))])
@@ -51,19 +75,23 @@ def extract_text_from_file(uploaded_file):
     else:
         raise ValueError(f"Unsupported: .{ext}")
 
-def split_into_chunks(text):
-    from langchain.text_splitter import RecursiveCharacterTextSplitter
-    s = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100, separators=["\n\n","\n","."," ",""])
-    chunks = s.split_text(text)
-    print(f"✅ {len(chunks)} chunks")
+def split_into_chunks(text: str) -> list:
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=500, chunk_overlap=100,
+        separators=["\n\n", "\n", ".", " ", ""]
+    )
+    chunks = splitter.split_text(text)
+    print(f"✅ {len(chunks)} chunks created")
     return chunks
 
-def build_vector_store(chunks):
+def build_vector_store(chunks: list):
     global _vector_store
-    _vector_store = FAISS.from_texts(chunks, load_embeddings())
+    emb = load_embeddings()
+    print("⏳ Building FAISS store...")
+    _vector_store = FAISS.from_texts(chunks, emb)
     print("✅ FAISS built!")
 
-def process_uploaded_file(uploaded_file):
+def process_uploaded_file(uploaded_file) -> str:
     text = extract_text_from_file(uploaded_file)
     if not text.strip():
         return "❌ Could not extract text."
@@ -71,13 +99,13 @@ def process_uploaded_file(uploaded_file):
     build_vector_store(chunks)
     return f"✅ Resume processed! {len(chunks)} sections indexed."
 
-def get_relevant_context(question, k=3):
+def get_relevant_context(question: str, k: int = 3) -> str:
     if _vector_store is None:
         return ""
     docs = _vector_store.similarity_search(question, k=k)
     return "\n\n".join([d.page_content for d in docs])
 
-def has_document():
+def has_document() -> bool:
     return _vector_store is not None
 
 def reset_vector_store():
