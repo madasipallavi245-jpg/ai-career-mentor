@@ -12,35 +12,35 @@ import requests
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
 EMB_API_URL = "https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/all-MiniLM-L6-v2"
 
-# Use HF API for embeddings too — no torch needed!
 class HFAPIEmbeddings(Embeddings):
     def __init__(self):
         self.headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-        print("✅ HF API Embeddings ready!")
 
     def _get_embeddings(self, texts: List[str]) -> List[List[float]]:
-        response = requests.post(
-            EMB_API_URL,
-            headers=self.headers,
-            json={"inputs": texts, "options": {"wait_for_model": True}},
-            timeout=30
-        )
-        if response.status_code == 200:
-            result = response.json()
-            # Normalize embeddings
-            embeddings = []
-            for emb in result:
-                arr = np.array(emb)
-                norm = np.linalg.norm(arr)
-                if norm > 0:
-                    arr = arr / norm
-                embeddings.append(arr.tolist())
-            return embeddings
-        else:
-            raise Exception(f"Embedding API error: {response.status_code}")
+        try:
+            response = requests.post(
+                EMB_API_URL,
+                headers=self.headers,
+                json={"inputs": texts, "options": {"wait_for_model": True}},
+                timeout=30
+            )
+            if response.status_code == 200:
+                result = response.json()
+                embeddings = []
+                for emb in result:
+                    arr = np.array(emb)
+                    norm = np.linalg.norm(arr)
+                    if norm > 0:
+                        arr = arr / norm
+                    embeddings.append(arr.tolist())
+                return embeddings
+            else:
+                # Return zero vectors on error
+                return [[0.0] * 384 for _ in texts]
+        except Exception:
+            return [[0.0] * 384 for _ in texts]
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        # Process in batches of 10
         all_embeddings = []
         for i in range(0, len(texts), 10):
             batch = texts[i:i+10]
@@ -61,7 +61,6 @@ def load_embeddings():
 
 def extract_text_from_file(uploaded_file) -> str:
     ext = uploaded_file.name.split(".")[-1].lower()
-    print(f"📄 Reading: {uploaded_file.name}")
     if ext == "pdf":
         pdf = fitz.open(stream=uploaded_file.read(), filetype="pdf")
         text = "".join([pdf.load_page(i).get_text() for i in range(len(pdf))])
@@ -81,23 +80,23 @@ def split_into_chunks(text: str) -> list:
         separators=["\n\n", "\n", ".", " ", ""]
     )
     chunks = splitter.split_text(text)
-    print(f"✅ {len(chunks)} chunks created")
     return chunks
 
 def build_vector_store(chunks: list):
     global _vector_store
     emb = load_embeddings()
-    print("⏳ Building FAISS store...")
     _vector_store = FAISS.from_texts(chunks, emb)
-    print("✅ FAISS built!")
 
 def process_uploaded_file(uploaded_file) -> str:
-    text = extract_text_from_file(uploaded_file)
-    if not text.strip():
-        return "❌ Could not extract text."
-    chunks = split_into_chunks(text)
-    build_vector_store(chunks)
-    return f"✅ Resume processed! {len(chunks)} sections indexed."
+    try:
+        text = extract_text_from_file(uploaded_file)
+        if not text.strip():
+            return "❌ Could not extract text."
+        chunks = split_into_chunks(text)
+        build_vector_store(chunks)
+        return f"✅ Resume processed! {len(chunks)} sections indexed."
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
 
 def get_relevant_context(question: str, k: int = 3) -> str:
     if _vector_store is None:

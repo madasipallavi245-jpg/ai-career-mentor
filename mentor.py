@@ -4,8 +4,6 @@ from langchain.memory import ConversationBufferWindowMemory
 from prompts import rag_prompt, chat_prompt
 from rag import get_relevant_context, has_document
 
-# HuggingFace Inference API — no model loaded locally!
-# Uses Mistral-7B via API — better quality than Phi-2!
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
 API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
 
@@ -18,10 +16,8 @@ def load_model():
         k=10, human_prefix="User", ai_prefix="Alex", input_key="input"
     )
     _is_loaded = True
-    print("✅ HF Inference API ready!")
 
 def call_hf_api(prompt: str) -> str:
-    """Call HuggingFace Inference API."""
     headers = {"Authorization": f"Bearer {HF_TOKEN}"}
     payload = {
         "inputs": prompt,
@@ -74,9 +70,7 @@ def get_response(user_input: str) -> str:
     history = _memory.load_memory_variables({}).get("history", "")
     if has_document():
         context = get_relevant_context(user_input, k=3)
-        prompt = rag_prompt.format(
-            context=context, history=history, input=user_input
-        )
+        prompt = rag_prompt.format(context=context, history=history, input=user_input)
     else:
         prompt = chat_prompt.format(history=history, input=user_input)
     raw = call_hf_api(prompt)
