@@ -1,5 +1,4 @@
-import os
-import requests
+import os, requests
 from langchain.memory import ConversationBufferWindowMemory
 from prompts import rag_prompt, chat_prompt
 from rag import get_relevant_context, has_document
@@ -27,11 +26,14 @@ def query_api(prompt):
             "return_full_text": False
         }
     }
-    response = requests.post(API_URL, headers=headers, json=payload, timeout=60)
-    result = response.json()
-    if isinstance(result, list) and len(result) > 0:
-        return result[0].get("generated_text", "")
-    return "I'm having trouble connecting. Please try again."
+    try:
+        response = requests.post(API_URL, headers=headers, json=payload, timeout=60)
+        result = response.json()
+        if isinstance(result, list) and len(result) > 0:
+            return result[0].get("generated_text", "")
+        return "I am having trouble connecting. Please try again."
+    except Exception as e:
+        return f"API error: {str(e)}"
 
 def clean_response(r):
     for stop in ["User:","Human:","\nUser","\nHuman","[INST]","[/INST]","Alex ("]:
