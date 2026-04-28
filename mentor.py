@@ -1,20 +1,15 @@
 import os
 import requests
-from langchain.memory import ConversationBufferWindowMemory
-from prompts import rag_prompt, chat_prompt
-from rag import get_relevant_context, has_document
 
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
 API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
 
-_memory = None
+# Simple conversation history without langchain
+_history = []
 _is_loaded = False
 
 def load_model():
-    global _memory, _is_loaded
-    _memory = ConversationBufferWindowMemory(
-        k=10, human_prefix="User", ai_prefix="Alex", input_key="input"
-    )
+    global _is_loaded
     _is_loaded = True
 
 def call_hf_api(prompt: str) -> str:
@@ -31,7 +26,10 @@ def call_hf_api(prompt: str) -> str:
         }
     }
     try:
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=60)
+        response = requests.post(
+            API_URL, headers=headers,
+            json=payload, timeout=60
+        )
         if response.status_code == 200:
             result = response.json()
             if isinstance(result, list) and len(result) > 0:
@@ -49,9 +47,8 @@ def call_hf_api(prompt: str) -> str:
 def clean_response(r: str) -> str:
     stop_phrases = [
         "User:", "Human:", "\nUser", "\nHuman",
-        "[INST]", "[/INST]", "[INSERT", "Alex (",
-        "Assistant:", "<|", "|>", "Generated Output:",
-        "Question:", "Note:", "Disclaimer:"
+        "[INST]", "[/INST]", "Alex (", "Assistant:",
+        "<|", "|>", "Generated Output:", "Question:", "Note:"
     ]
     for stop in stop_phrases:
         if stop in r:
@@ -63,25 +60,48 @@ def clean_response(r: str) -> str:
             r = r[:last_punct+1]
     return r if len(r) > 15 else "Could you give me more details about your career goals?"
 
+def build_prompt(user_input: str, context: str = "") -> str:
+    # Build history string (last 5 exchanges)
+    history_str = ""
+    for h in _history[-5:]:
+        history_str += f"User: {h['user']}\nAlex: {h['alex']}\n"
+
+    if context:
+        return f"""You are Alex, a career mentor.
+Read the resume below and answer in 2-3 short sentences.
+
+Resume:
+{context}
+
+{history_str}
+User: {user_input}
+Alex:"""
+    else:
+        return f"""You are Alex, a career mentor.
+Answer in 2-3 short complete sentences. Be helpful and specific.
+
+{history_str}
+User: {user_input}
+Alex:"""
+
 def get_response(user_input: str) -> str:
-    global _memory, _is_loaded
+    global _is_loaded
     if not _is_loaded:
         load_model()
-    history = _memory.load_memory_variables({}).get("history", "")
-    if has_document():
-        context = get_relevant_context(user_input, k=3)
-        prompt = rag_prompt.format(context=context, history=history, input=user_input)
-    else:
-        prompt = chat_prompt.format(history=history, input=user_input)
+
+    from rag import get_relevant_context, has_document
+    context = get_relevant_context(user_input, k=3) if has_document() else ""
+    prompt = build_prompt(user_input, context)
     raw = call_hf_api(prompt)
     response = clean_response(raw)
-    _memory.save_context({"input": user_input}, {"output": response})
+
+    # Save to history
+    _history.append({"user": user_input, "alex": response})
     return response
 
 def reset_conversation():
-    global _memory
-    if _memory:
-        _memory.clear()
+    global _history
+    _history = []
 
 def is_model_loaded() -> bool:
     return _is_loaded

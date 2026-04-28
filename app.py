@@ -1,7 +1,7 @@
-import streamlit as st
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from rag import process_uploaded_file, reset_vector_store, has_document
+from mentor import get_response, reset_conversation, is_model_loaded
+from prompts import WELCOME_MESSAGE
+
 
 # Page config MUST be first Streamlit command
 st.set_page_config(
