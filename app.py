@@ -1,7 +1,4 @@
-from rag import process_uploaded_file, reset_vector_store, has_document
-from mentor import get_response, reset_conversation, is_model_loaded
-from prompts import WELCOME_MESSAGE
-
+import streamlit as st
 
 # Page config MUST be first Streamlit command
 st.set_page_config(
@@ -9,6 +6,16 @@ st.set_page_config(
     page_icon="🎓",
     layout="wide"
 )
+
+# Import after page config
+try:
+    from rag import process_uploaded_file, reset_vector_store, has_document
+    from mentor import get_response, reset_conversation, is_model_loaded
+    from prompts import WELCOME_MESSAGE
+except Exception as e:
+    st.error(f"❌ Import error: {e}")
+    st.info("Please check the logs for details.")
+    st.stop()
 
 st.markdown("""<style>
 .mentor-header{
@@ -29,19 +36,9 @@ st.markdown("""<div class="mentor-header">
 </p>
 </div>""", unsafe_allow_html=True)
 
-# Import after page config
-try:
-    from rag import process_uploaded_file, reset_vector_store, has_document
-    from mentor import get_response, reset_conversation, is_model_loaded
-    from prompts import WELCOME_MESSAGE
-except Exception as e:
-    st.error(f"❌ Import error: {e}")
-    st.info("Please check the logs for details.")
-    st.stop()
-
 # Session state
 if "messages" not in st.session_state:
-    st.session_state.messages = [{"role":"assistant","content":WELCOME_MESSAGE}]
+    st.session_state.messages = [{"role": "assistant", "content": WELCOME_MESSAGE}]
 if "file_uploaded" not in st.session_state:
     st.session_state.file_uploaded = False
 if "uploaded_filename" not in st.session_state:
@@ -58,7 +55,7 @@ with st.sidebar:
 
     uploaded_file = st.file_uploader(
         "Drop resume",
-        type=["pdf","txt","docx"],
+        type=["pdf", "txt", "docx"],
         label_visibility="collapsed"
     )
 
@@ -102,7 +99,7 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Reset Chat", use_container_width=True, type="secondary"):
-        st.session_state.messages = [{"role":"assistant","content":WELCOME_MESSAGE}]
+        st.session_state.messages = [{"role": "assistant", "content": WELCOME_MESSAGE}]
         st.session_state.file_uploaded = False
         st.session_state.uploaded_filename = None
         st.session_state.pending_input = None
@@ -139,12 +136,12 @@ if chat_input:
     user_input = chat_input
 
 if user_input:
-    st.session_state.messages.append({"role":"user","content":user_input})
+    st.session_state.messages.append({"role": "user", "content": user_input})
     with st.chat_message("user", avatar="👤"):
         st.markdown(user_input)
     with st.chat_message("assistant", avatar="🎓"):
         with st.spinner("Alex is thinking..."):
             response = get_response(user_input)
         st.markdown(response)
-    st.session_state.messages.append({"role":"assistant","content":response})
+    st.session_state.messages.append({"role": "assistant", "content": response})
     st.rerun()

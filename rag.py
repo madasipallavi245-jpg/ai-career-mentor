@@ -53,7 +53,6 @@ def extract_text_from_file(uploaded_file) -> str:
         raise ValueError(f"Unsupported: .{ext}")
 
 def split_into_chunks(text: str) -> list:
-    # Simple chunking without langchain
     words = text.split()
     chunks = []
     chunk_size = 100  # words per chunk
@@ -71,7 +70,6 @@ def process_uploaded_file(uploaded_file) -> str:
         if not text.strip():
             return "❌ Could not extract text."
         _chunks = split_into_chunks(text)
-        # Get embeddings for all chunks
         _embeddings_cache = get_embedding(_chunks)
         _is_indexed = True
         return f"✅ Resume processed! {len(_chunks)} sections indexed."
@@ -83,15 +81,12 @@ def get_relevant_context(question: str, k: int = 3) -> str:
     if not _chunks or not _embeddings_cache:
         return ""
     try:
-        # Get question embedding
         q_emb = np.array(get_embedding([question])[0])
-        # Calculate cosine similarity
         similarities = []
         for i, chunk_emb in enumerate(_embeddings_cache):
             c_emb = np.array(chunk_emb)
             sim = np.dot(q_emb, c_emb)
             similarities.append((sim, i))
-        # Get top k most similar chunks
         similarities.sort(reverse=True)
         top_chunks = [_chunks[i] for _, i in similarities[:k]]
         return "\n\n".join(top_chunks)
@@ -105,4 +100,4 @@ def reset_vector_store():
     global _chunks, _embeddings_cache, _is_indexed
     _chunks = []
     _embeddings_cache = []
-    _is_indexed =
+    _is_indexed = False
