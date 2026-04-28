@@ -41,7 +41,7 @@ Be practical, encouraging, and professional."""
     messages.append({"role": "user", "content": user_input})
 
     payload = {
-        "model": "llama3-8b-8192",  # Free, fast model on Groq
+        "model": "llama-3.3-70b-versatile",  # Free, fast model on Groq
         "messages": messages,
         "max_tokens": 200,
         "temperature": 0.7,
