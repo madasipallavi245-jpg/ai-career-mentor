@@ -3,10 +3,9 @@ import requests
 
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
 
-# Updated API URL - using the correct inference endpoint
-API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3"
+# Using Zephyr 7B - completely free, no approval needed, great for chat
+API_URL = "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta"
 
-# Simple conversation history
 _history = []
 _is_loaded = False
 
@@ -41,13 +40,13 @@ def call_hf_api(prompt: str) -> str:
                 return result[0].get("generated_text", "")
             return str(result)
         elif response.status_code == 503:
-            return "Model is loading, please try again in 20 seconds."
+            return "Model is loading, please wait 20 seconds and try again."
         elif response.status_code == 404:
-            return "Model not found. Please check your HF_TOKEN and try again."
+            return f"Model not found (404)."
         elif response.status_code == 401:
-            return "Unauthorized. Please check your HF_TOKEN in Streamlit Secrets."
+            return "Unauthorized — please check your HF_TOKEN in Streamlit Secrets."
         elif response.status_code == 403:
-            return "Access denied. You may need to accept the model's terms on Hugging Face."
+            return "Access denied — you may need to accept model terms on Hugging Face."
         else:
             return f"API error {response.status_code}: {response.text[:200]}"
     except requests.exceptions.Timeout:
@@ -58,11 +57,10 @@ def call_hf_api(prompt: str) -> str:
 def clean_response(r: str) -> str:
     if not r or len(r) < 5:
         return "Could you give me more details about your career goals?"
-
     stop_phrases = [
         "User:", "Human:", "\nUser", "\nHuman",
-        "[INST]", "[/INST]", "Alex (", "Assistant:",
-        "<|", "|>", "Generated Output:", "Question:", "Note:"
+        "<|user|>", "<|system|>", "<|assistant|>",
+        "[INST]", "[/INST]", "Assistant:", "Note:"
     ]
     for stop in stop_phrases:
         if stop in r:
@@ -77,14 +75,14 @@ def clean_response(r: str) -> str:
 def build_prompt(user_input: str, context: str = "") -> str:
     history_str = ""
     for h in _history[-3:]:
-        history_str += f"[INST] {h['user']} [/INST] {h['alex']}\n"
+        history_str += f"<|user|>\n{h['user']}</s>\n<|assistant|>\n{h['alex']}</s>\n"
 
     if context:
-        system = f"You are Alex, a helpful career mentor. Use the resume context below to give personalized advice in 2-3 sentences.\n\nResume Context:\n{context}\n\n"
+        system = f"You are Alex, a helpful career mentor. Use the resume context to give personalized advice in 2-3 sentences.\n\nResume:\n{context}"
     else:
-        system = "You are Alex, a helpful career mentor. Answer in 2-3 short complete sentences. Be specific and actionable.\n\n"
+        system = "You are Alex, a helpful career mentor. Give specific, actionable advice in 2-3 sentences."
 
-    prompt = f"<s>[INST] {system}{history_str}{user_input} [/INST]"
+    prompt = f"<|system|>\n{system}</s>\n{history_str}<|user|>\n{user_input}</s>\n<|assistant|>\n"
     return prompt
 
 def get_response(user_input: str) -> str:
@@ -97,7 +95,6 @@ def get_response(user_input: str) -> str:
     prompt = build_prompt(user_input, context)
     raw = call_hf_api(prompt)
     response = clean_response(raw)
-
     _history.append({"user": user_input, "alex": response})
     return response
 
