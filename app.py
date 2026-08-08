@@ -32,7 +32,7 @@ st.markdown("""<style>
 st.markdown("""<div class="mentor-header">
 <h1 style="margin:0;font-size:28px;">🎓 AI Career Mentor</h1>
 <p style="margin:5px 0 0 0;opacity:0.9;">
-    Powered by Mistral 7B + RAG + FAISS — 100% Free
+    Powered by RAG + FAISS + Llama 3.3 70B (Groq) — 100% Free
 </p>
 </div>""", unsafe_allow_html=True)
 
@@ -109,7 +109,7 @@ with st.sidebar:
 
     st.markdown("---")
     if is_model_loaded():
-        st.success("🟢 Mistral 7B API Active")
+        st.success("🟢 Llama 3.3 70B (Groq) Active")
     else:
         st.warning("🟡 Ready — type to start!")
 

@@ -1,6 +1,7 @@
 import os
 import fitz
 import docx
+import faiss
 import numpy as np
 from io import BytesIO
 from typing import List
@@ -8,10 +9,11 @@ import requests
 
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
 EMB_API_URL = "https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/all-MiniLM-L6-v2"
+EMBEDDING_DIM = 384  # all-MiniLM-L6-v2 output size
 
-# Simple in-memory vector store without FAISS
+# Real FAISS vector store
 _chunks = []
-_embeddings_cache = []
+_faiss_index = None
 _is_indexed = False
 
 def get_embedding(texts: List[str]) -> List[List[float]]:
@@ -64,31 +66,36 @@ def split_into_chunks(text: str) -> list:
     return chunks
 
 def process_uploaded_file(uploaded_file) -> str:
-    global _chunks, _embeddings_cache, _is_indexed
+    global _chunks, _faiss_index, _is_indexed
     try:
         text = extract_text_from_file(uploaded_file)
         if not text.strip():
             return "❌ Could not extract text."
+
         _chunks = split_into_chunks(text)
-        _embeddings_cache = get_embedding(_chunks)
+        embeddings = get_embedding(_chunks)
+        emb_matrix = np.array(embeddings, dtype="float32")
+
+        # Embeddings from get_embedding() are already L2-normalized,
+        # so inner product = cosine similarity. IndexFlatIP is FAISS's
+        # exact (brute-force) index — fine at this chunk-count scale.
+        _faiss_index = faiss.IndexFlatIP(EMBEDDING_DIM)
+        _faiss_index.add(emb_matrix)
+
         _is_indexed = True
-        return f"✅ Resume processed! {len(_chunks)} sections indexed."
+        return f"✅ Resume processed! {len(_chunks)} sections indexed with FAISS."
     except Exception as e:
         return f"❌ Error: {str(e)}"
 
 def get_relevant_context(question: str, k: int = 3) -> str:
-    global _chunks, _embeddings_cache
-    if not _chunks or not _embeddings_cache:
+    global _chunks, _faiss_index
+    if not _chunks or _faiss_index is None:
         return ""
     try:
-        q_emb = np.array(get_embedding([question])[0])
-        similarities = []
-        for i, chunk_emb in enumerate(_embeddings_cache):
-            c_emb = np.array(chunk_emb)
-            sim = np.dot(q_emb, c_emb)
-            similarities.append((sim, i))
-        similarities.sort(reverse=True)
-        top_chunks = [_chunks[i] for _, i in similarities[:k]]
+        q_emb = np.array(get_embedding([question]), dtype="float32")
+        k = min(k, len(_chunks))
+        distances, indices = _faiss_index.search(q_emb, k)
+        top_chunks = [_chunks[i] for i in indices[0] if i != -1]
         return "\n\n".join(top_chunks)
     except Exception:
         return "\n\n".join(_chunks[:k])
@@ -97,7 +104,7 @@ def has_document() -> bool:
     return _is_indexed
 
 def reset_vector_store():
-    global _chunks, _embeddings_cache, _is_indexed
+    global _chunks, _faiss_index, _is_indexed
     _chunks = []
-    _embeddings_cache = []
+    _faiss_index = None
     _is_indexed = False
