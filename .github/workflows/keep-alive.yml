@@ -1,0 +1,26 @@
+name: Keep Streamlit Apps Awake
+
+on:
+  schedule:
+    # Runs every 6 hours (well within Streamlit's 7-day sleep window)
+    - cron: '0 */6 * * *'
+  workflow_dispatch:  # lets you trigger it manually from the Actions tab
+
+jobs:
+  ping-apps:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping AI Career Mentor
+        run: curl -s -o /dev/null -w "AI Career Mentor: %{http_code}\n" https://ai-career-mentor-9xhvufgb2aksdg3jlknptm.streamlit.app/
+
+      - name: Ping Revenue Leakage Detector
+        run: curl -s -o /dev/null -w "Revenue Leakage Detector: %{http_code}\n" https://revenue-leakage-detector-fdhjfe57xck4qnp4mpx9ge.streamlit.app/
+
+      - name: Ping Telecom Churn Predictor
+        run: curl -s -o /dev/null -w "Telecom Churn Predictor: %{http_code}\n" https://telecom-churn-predictor-frerjdjk4xqsdjqppjeh27.streamlit.app/
+
+      - name: Ping Fake News Predictor
+        run: curl -s -o /dev/null -w "Fake News Predictor: %{http_code}\n" https://fake-news-predictor-xkb99qxnjhwwyzczmclstd.streamlit.app/
+
+      - name: Ping Lead Conversion Scorer
+        run: curl -s -o /dev/null -w "Lead Conversion Scorer: %{http_code}\n" https://lead-conversion-scorer-n6qhzrfat2cgvigopy5km3.streamlit.app/
